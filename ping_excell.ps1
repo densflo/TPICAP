@@ -14,17 +14,29 @@ For ($Row = 1; $Row -le $RowMax; $Row++) {
     if ($ServerName -and $ServerName.Trim() -ne "") {
         Write-Host "Processing server: $ServerName"
         Try {
-            # Attempt to resolve the server name
-            $HostEntry = [System.Net.Dns]::GetHostEntry($ServerName)
-            $ResolvedName = $HostEntry.HostName
-            if ($ResolvedName.Contains(".")) {
-                # If resolved to FQDN, write FQDN to Column B
-                $Worksheet.Cells.Item($Row,2).Value = $ResolvedName
+            # Set a timeout for DNS resolution (5 seconds)
+            $task = Start-Job -ScriptBlock {
+                param($ServerName)
+                [System.Net.Dns]::GetHostEntry($ServerName)
+            } -ArgumentList $ServerName
+
+            $result = Wait-Job $task -Timeout 5
+
+            if ($result) {
+                $HostEntry = Receive-Job $task
+                $ResolvedName = $HostEntry.HostName
+                if ($ResolvedName.Contains(".")) {
+                    # If resolved to FQDN, write FQDN to Column B
+                    $Worksheet.Cells.Item($Row,2).Value = $ResolvedName
+                } else {
+                    # If resolved to short name, write IP address(es) to Column B
+                    $IPAddresses = $HostEntry.AddressList | ForEach-Object { $_.IPAddressToString }
+                    $Worksheet.Cells.Item($Row,2).Value = ($IPAddresses -join ", ")
+                }
             } else {
-                # If resolved to short name, write IP address(es) to Column B
-                $IPAddresses = $HostEntry.AddressList | ForEach-Object { $_.IPAddressToString }
-                $Worksheet.Cells.Item($Row,2).Value = ($IPAddresses -join ", ")
+                $Worksheet.Cells.Item($Row,2).Value = "resolution timed out"
             }
+            Remove-Job $task -Force
         }
         Catch {
             # If resolution fails, write 'not resolvable' to Column B
@@ -45,7 +57,8 @@ $Excel.Quit()
 [System.Runtime.Interopservices.Marshal]::ReleaseComObject($Worksheet) | Out-Null
 [System.Runtime.Interopservices.Marshal]::ReleaseComObject($Workbook) | Out-Null
 [System.Runtime.Interopservices.Marshal]::ReleaseComObject($Excel) | Out-Null
-[gc]::Collect()
-[gc]::WaitForPendingFinalizers()
 
-Write-Host "DNS lookup completed and results have been written to C:\input.xlsx."
+# Minimal garbage collection
+[gc]::Collect()
+
+Write-Host "DNS lookup completed and results have been written to C:\temp\input.xlsx."
