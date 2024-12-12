@@ -21,6 +21,9 @@ function Get-RemoteSession {
     }
 }
 
+# Import the Get-DomainGroupMembers function
+. .\Get-DomainGroupMembers.ps1
+
 # Ensure temp directory exists
 $tempDir = "C:\temp"
 if (-not (Test-Path $tempDir)) {
@@ -84,16 +87,52 @@ foreach ($Server in $Servers) {
                 $computerInfo = Get-WmiObject Win32_ComputerSystem
                 $biosInfo = Get-WmiObject Win32_BIOS
 
-                # User Profiles with converted last used date
+
+                # Get Local Administrators Group Members
+                $adminGroup = [ADSI]"WinNT://$env:COMPUTERNAME/Administrators"
+                $administrators = @($adminGroup.Invoke('Members') | ForEach-Object {
+                    $path = ([ADSI]$_).Path
+                    $name = $path.Split('/')[-1]
+                    $isDomainGroup = $path -match "WinNT://([^/]+)/([^/]+)$"
+                    $domain = if ($matches) { $matches[1] } else { $env:COMPUTERNAME }
+                    $accountName = if ($matches) { $matches[2] } else { $name }
+                    
+                    [PSCustomObject]@{
+                        Name = $name
+                        Path = $path
+                        Domain = $domain
+                        AccountName = $accountName
+                        IsLocal = if ($isDomainGroup) {$false} else {$true}
+                    }
+                })
+
+                
+                # Get Remote Desktop Users Group Members
+                $rdpGroup = [ADSI]"WinNT://$env:COMPUTERNAME/Remote Desktop Users"
+                $rdpUsers = @($rdpGroup.Invoke('Members') | ForEach-Object {
+                    $path = ([ADSI]$_).Path
+                    $name = $path.Split('/')[-1]
+                    $isDomainGroup = $path -match "WinNT://([^/]+)/([^/]+)$"
+                    $domain = if ($matches) { $matches[1] } else { $env:COMPUTERNAME }
+                    $accountName = if ($matches) { $matches[2] } else { $name }
+                    
+                    [PSCustomObject]@{
+                        Name = $name
+                        Path = $path
+                        Domain = $domain
+                        AccountName = $accountName
+                        IsLocal = if ($isDomainGroup) {$false} else {$true}
+                    }
+                })
+
+                # Rest of the server information gathering...
                 $localProfiles = Get-WmiObject Win32_UserProfile | 
                     Select-Object @{Name='Username';Expression={$_.LocalPath.Split('\')[-1]}}, 
                                    @{Name='ProfilePath';Expression={$_.LocalPath}}, 
                                    @{Name='LastUsed';Expression={
-                                       # Use the local Convert-WmiDateTime function
                                        Convert-WmiDateTime $_.LastUseTime
                                    }}
 
-                # Installed Applications
                 $installedApps = Get-WmiObject Win32_Product | 
                     Select-Object Name, Version, Vendor, 
                                    @{Name='InstallDate';Expression={
@@ -103,7 +142,6 @@ foreach ($Server in $Servers) {
                                        } else { 'Unknown' }
                                    }}
 
-                # Installed Roles
                 $installedRoles = try {
                     if (Get-Command Get-WindowsFeature -ErrorAction SilentlyContinue) {
                         Get-WindowsFeature | Where-Object {$_.Installed} | 
@@ -116,7 +154,6 @@ foreach ($Server in $Servers) {
                     @{Name = "Role retrieval failed"}
                 }
 
-                # Shares
                 $localShares = Get-WmiObject Win32_Share | 
                     Where-Object {$_.Type -ne 1} | 
                     Select-Object Name, Path, Description
@@ -129,7 +166,6 @@ foreach ($Server in $Servers) {
                     @{Name = "Network share retrieval failed"}
                 }
 
-                # Disk Information
                 $diskInfo = Get-WmiObject Win32_LogicalDisk | 
                     Select-Object @{Name='Drive';Expression={$_.DeviceID}}, 
                                    @{Name='Size';Expression={"{0:N2} GB" -f ($_.Size/1GB)}}, 
@@ -138,7 +174,6 @@ foreach ($Server in $Servers) {
                                    FileSystem, 
                                    VolumeName
 
-                # Compile information
                 [PSCustomObject]@{
                     ServerDetails = [PSCustomObject]@{
                         Hostname = $env:COMPUTERNAME
@@ -150,12 +185,44 @@ foreach ($Server in $Servers) {
                         Domain = $computerInfo.Domain
                         TotalMemory = "{0:N2} GB" -f ($computerInfo.TotalPhysicalMemory / 1GB)
                     }
+                    Administrators = $administrators
+                    RemoteDesktopUsers = $rdpUsers
                     UserProfiles = $localProfiles
                     InstalledApplications = $installedApps
                     InstalledRoles = $installedRoles
                     LocalShares = $localShares
                     NetworkShares = $networkShares
                     DiskInfo = $diskInfo
+                }
+            }
+
+            # Process domain groups for Administrators
+            $adminDomainGroupMembers = @{}
+            foreach ($admin in $ServerInfo.Administrators) {
+                if (-not $admin.IsLocal) {
+                    $groupPath = "$($admin.Domain)\$($admin.AccountName)"
+                    try {
+                        $members = Get-DomainGroupMembers -DomainGroup $groupPath
+                        $adminDomainGroupMembers[$admin.Name] = $members
+                    }
+                    catch {
+                        $adminDomainGroupMembers[$admin.Name] = "Failed to retrieve group members: $_"
+                    }
+                }
+            }
+
+            # Process domain groups for Remote Desktop Users
+            $rdpDomainGroupMembers = @{}
+            foreach ($rdpUser in $ServerInfo.RemoteDesktopUsers) {
+                if (-not $rdpUser.IsLocal) {
+                    $groupPath = "$($rdpUser.Domain)\$($rdpUser.AccountName)"
+                    try {
+                        $members = Get-DomainGroupMembers -DomainGroup $groupPath
+                        $rdpDomainGroupMembers[$rdpUser.Name] = $members
+                    }
+                    catch {
+                        $rdpDomainGroupMembers[$rdpUser.Name] = "Failed to retrieve group members: $_"
+                    }
                 }
             }
 
@@ -178,6 +245,52 @@ Model:              $($ServerInfo.ServerDetails.Model)
 Serial Number:      $($ServerInfo.ServerDetails.SerialNumber)
 Domain:             $($ServerInfo.ServerDetails.Domain)
 Total Memory:       $($ServerInfo.ServerDetails.TotalMemory)
+
+==================================================
+LOCAL ADMINISTRATORS GROUP MEMBERS
+==================================================
+$($ServerInfo.Administrators | ForEach-Object {
+    $accountType = if ($_.IsLocal) { "Local Account" } else { "Domain Account" }
+    "Name:          $($_.Name)`n" +
+    "Type:          $accountType`n" +
+    "Path:          $($_.Path)`n"
+    
+    if (-not $_.IsLocal -and $adminDomainGroupMembers.ContainsKey($_.Name)) {
+        $groupMembers = $adminDomainGroupMembers[$_.Name]
+        if ($groupMembers -is [string]) {
+            "Group Members: $groupMembers`n"
+        }
+        else {
+            "Group Members:`n" + ($groupMembers | ForEach-Object {
+                "              - $($_.Name) ($($_.ObjectClass))`n"
+            })
+        }
+    }
+    "`n"
+} | Out-String)
+
+==================================================
+REMOTE DESKTOP USERS GROUP MEMBERS
+==================================================
+$($ServerInfo.RemoteDesktopUsers | ForEach-Object {
+    $accountType = if ($_.IsLocal) { "Local Account" } else { "Domain Account" }
+    "Name:          $($_.Name)`n" +
+    "Type:          $accountType`n" +
+    "Path:          $($_.Path)`n"
+    
+    if (-not $_.IsLocal -and $rdpDomainGroupMembers.ContainsKey($_.Name)) {
+        $groupMembers = $rdpDomainGroupMembers[$_.Name]
+        if ($groupMembers -is [string]) {
+            "Group Members: $groupMembers`n"
+        }
+        else {
+            "Group Members:`n" + ($groupMembers | ForEach-Object {
+                "              - $($_.Name) ($($_.ObjectClass))`n"
+            })
+        }
+    }
+    "`n"
+} | Out-String)
 
 ==================================================
 USER PROFILES
