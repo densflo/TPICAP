@@ -23,8 +23,9 @@ function Get-CmkEtag {
         Write-Verbose "Raw JSON response: $($returnedJSON)"
         $data = $returnedJSON | ConvertFrom-Json
         
-        if ($data.title -eq "Not Found" -and $data.detail -like "*Host not found*") {
-            Write-Verbose "Host not found in Checkmk API"
+        if ($data.status -ne '200') {
+            Write-Verbose "Error retriving json data"
+            write-Verbose $returnedJSON
             return "Not_found"
         }
         
