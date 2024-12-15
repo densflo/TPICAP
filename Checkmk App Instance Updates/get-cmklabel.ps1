@@ -19,7 +19,7 @@ function Get-CmkLabel {
     Write-Verbose "API URI: $($uri)"
 
     try {
-        $response = & $CurlPath -X GET -s -k -H $Headers $uri -w "%{http_code}"
+        $response = & $CurlPath -X GET -s -k -H $Headers $uri
         $statusCode = $response[-3..-1] -join ""
         $returnedJSON = $response[0..($response.Length - 4)]
         
