@@ -1,4 +1,4 @@
-$user = 'automation'
+$user = 'automation''automation'
 $HOSTNAME = 'LDN1WS7001.corp.ad.tullib.com'
 $pass = 'BYGBHSUBPQUIYPSYVVSV'
 $CurlPath = "curl.exe"
