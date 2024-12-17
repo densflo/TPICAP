@@ -25,6 +25,10 @@ function get-cmklist {
         
         
             $data = $returnedJSON | ConvertFrom-Json
+            if ($data.status -ne '200') {
+                Write-Verbose "Error retriving json data"
+                return $null
+            }
         
         return $data.value.id
     }

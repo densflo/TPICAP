@@ -19,21 +19,11 @@ function Get-CmkLabel {
     Write-Verbose "API URI: $($uri)"
 
     try {
-        $response = & $CurlPath -X GET -s -k -H $Headers $uri
-        $statusCode = $response[-3..-1] -join ""
-        $returnedJSON = $response[0..($response.Length - 4)]
-        
-        if ($statusCode -ne "200") {
-            Write-Error "Error: HTTP response status code $($statusCode) for host $($ComputerName)"
-            return $null
-        }
-        
-        $data = $returnedJSON | ConvertFrom-Json
-        $label = $data.extensions.effective_attributes.labels
-
+        $returnedJSON = & $CurlPath -X GET -s -k -H $Headers $uri
         Write-Verbose "Raw JSON response: $($returnedJSON)"
-        Write-Verbose "Extracted label: $($label)"
-
+        $data = $returnedJSON | ConvertFrom-Json
+        Write-Verbose $data
+        $label = $data.extensions.effective_attributes.labels
         return $label
     }
     catch {
