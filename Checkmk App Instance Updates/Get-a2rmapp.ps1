@@ -4,8 +4,15 @@ function get-appa2rm {
         [string]$ComputerName = $env:computername
     )
 
+    # Extract hostname if FQDN is provided
+    if ($ComputerName -match '\.') {
+        $Hostname = $ComputerName.Split('.')[0]
+    } else {
+        $Hostname = $ComputerName
+    }
+
     $CurlPath = "curl.exe"
-    $uri = "https://api.a2rm.direct.tpicapcloud.com/host/$($ComputerName)?report=hostcache"
+    $uri = "https://api.a2rm.direct.tpicapcloud.com/host/$($Hostname)?report=hostcache"
     $user = 'readonly'
     $pass = 'readonly'
     $pair = "$($user):$($pass)"
@@ -15,17 +22,28 @@ function get-appa2rm {
     Write-Verbose "Making API call to A2RM"
     $returnedJSON = & $CurlPath -X GET -s -k -H $Headers $uri
     
-    Write-Verbose "Received JSON: $returnedJSON"
-    
     Write-Verbose "Convert the JSON response to a PowerShell object"
     $data = $returnedJSON | ConvertFrom-Json
 
-    Write-Verbose "Extract all application instance names from the Application-Instances"
-    $appInstanceNames = foreach ($instance in $data.'Application-Instances') {
-        $instance.PSObject.Properties.Name  # Extracts all keys like "Shavlik - EM Prod"
+    Write-Verbose "Extract application instances and all their properties"
+    $appInfo = foreach ($instance in $data.'Application-Instances') {
+        $appName = $instance.PSObject.Properties.Name
+        $appDetails = $instance.$appName
+        
+        [PSCustomObject]@{
+            ApplicationName = $appName
+            APMEnabled = $appDetails.'APM-Enabled'
+            Environment = $appDetails.Environment
+            Region = $appDetails.Region
+            Description = $appDetails.Description
+            ServiceTier = $appDetails.'Service-Tier'
+            BusinessOwner = $appDetails.'Business-Owner'
+            TechnicalOwner = $appDetails.'Technical-Owner'
+            SupportOwner = $appDetails.'Support-Owner'
+            SupportTeam = $appDetails.'Support-Team'
+            LifecycleStage = $appDetails.'Lifecycle-Stage'
+        }
     }
 
-    Write-Verbose "Return a flat list of all application instance names (removes duplicates, optional)"
-    $uniqueAppNames = $appInstanceNames | Sort-Object -Unique
-    return $uniqueAppNames
+    return $appInfo
 }

@@ -5,9 +5,13 @@
 . "C:\Users\d_flores\OneDrive - TP ICAP\Documents\Code\Checkmk App Instance Updates\get-cmklabel.ps1"
 . "C:\Users\d_flores\OneDrive - TP ICAP\Documents\Code\Checkmk App Instance Updates\get-cmklist.ps1"
 
-$cmklist =get-cmklist -Verbose
+$cmklist = 'hkgpotlsql02.corp.ad.tullib.com'
 
 foreach ($cmk in $cmklist){
-    $cmklabel = get-cmklabel -ComputerName $cmk -Verbose
-    $cmktag = get-cmkeTag -ComputerName $cmk -Verbose
-    $cmkapp = get-appa2rm -ComputerName $cmk -Verbose
+    $cmkapp = get-appa2rm -ComputerName $cmk
+    foreach ($app in $cmkapp.ApplicationName){
+        Write-Host $app
+    }
+    $cmklabel = Get-CmkLabel -ComputerName $cmk
+    Write-Host $cmklabel
+}

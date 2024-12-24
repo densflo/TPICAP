@@ -14,9 +14,8 @@ function get-cmklist {
         "accept: application/json"
     )
 
-    if ($Verbose) {
-        Write-Verbose "API URI: $($uri)"
-    }
+    Write-Verbose "Getting list of hosts"
+    Write-Verbose "API URI: $($uri)"
 
     try {
         $returnedJSON = & $CurlPath -X GET -s -k -H $Headers $uri
@@ -25,10 +24,7 @@ function get-cmklist {
         
         
             $data = $returnedJSON | ConvertFrom-Json
-            if ($data.status -ne '200') {
-                Write-Verbose "Error retriving json data"
-                return $null
-            }
+            Write-Verbose $data
         
         return $data.value.id
     }
