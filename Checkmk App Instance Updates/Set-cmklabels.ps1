@@ -20,7 +20,7 @@ function Set-CmkLabels {
         "accept: application/json"
     )
 
-    Write-Verbose "Getting label for host: $($ComputerName)"
+    Write-Verbose "Setting Labels for: $($ComputerName)"
     Write-Verbose "API URI: $($uri)"
 
     try {
